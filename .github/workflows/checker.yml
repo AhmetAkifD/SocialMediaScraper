@@ -1,0 +1,42 @@
+name: Social Media Checker
+
+on:
+  schedule:
+    - cron: '0 */12 * * *' # Her 12 saatte bir calisir
+  workflow_dispatch: # Manuel tetikleme icin
+
+jobs:
+  check-posts:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # state.json i commit edebilmek icin gerekli yetki
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run checker script
+        env:
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          TARGET_EMAIL: ${{ secrets.TARGET_EMAIL }}
+        run: python main.py
+
+      - name: Commit and push changes if state.json changed
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add state.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update state.json with new post IDs" && git push)
