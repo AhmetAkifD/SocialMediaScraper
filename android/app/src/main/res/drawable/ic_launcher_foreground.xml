@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Konuşma balonu içinde aşağı ok: "gönderileri çek" -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="30"
+        android:translateY="30">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M6,2h36a4,4 0,0 1,4 4v26a4,4 0,0 1,-4 4H20l-10,9v-9H6a4,4 0,0 1,-4 -4V6a4,4 0,0 1,4 -4z" />
+        <path
+            android:fillColor="#FF1D9BF0"
+            android:pathData="M21,9h6v11h6l-9,9 -9,-9h6z" />
+    </group>
+</vector>
