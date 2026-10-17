@@ -1,5 +1,12 @@
 # Social Media Scraper
 
+## Android uygulaması
+
+X (Twitter) hesaplarının gönderilerini çeken Android uygulaması [`android/`](android/) klasöründe.
+Kurulum ve ayrıntılar için [android/README.md](android/README.md) dosyasına bakın.
+
+## Python / GitHub Actions sürümü (eski)
+
 Bu proje, belirlenen X (Twitter) hesaplarındaki en son paylaşımları Nitter (RSSHub alternatifi) aracılığıyla takip eder ve yeni bir gönderi tespit ettiğinde size e-posta ile bildirim gönderir. GitHub Actions üzerinde her 12 saatte bir (veya manuel olarak) çalışacak şekilde ayarlanmıştır.
 
 ## Gereksinimler
