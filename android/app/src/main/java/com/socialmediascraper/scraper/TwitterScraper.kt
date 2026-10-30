@@ -16,6 +16,27 @@ sealed interface ScrapeResult {
     data class Failure(val message: String, val notFound: Boolean = false) : ScrapeResult
 }
 
+/** Kullanıcıya gösterilen hata mesajları. */
+object ScrapeErrors {
+    const val LAYOUT_CHANGED =
+        "X sayfa yapısı değişmiş, gönderiler okunamadı. Uygulamanın güncellenmesi gerekiyor."
+    const val PROTECTED = "Hesap gizli; gönderileri görülemiyor"
+    const val RATE_LIMIT = "X istek sınırına ulaşıldı, daha sonra tekrar deneyin"
+    const val LOGIN_REQUIRED = "X oturumu sona ermiş. Ayarlar'dan tekrar giriş yapın."
+    const val NO_INTERNET = "İnternet bağlantısı yok"
+
+    fun notFound(handle: String) = "@$handle bulunamadı"
+
+    /** Ayrıştırılmış sayfaya bakarak bir hata olup olmadığına karar verir. */
+    fun check(page: ParsedProfilePage, handle: String): ScrapeResult.Failure? = when {
+        page.isProtected && page.posts.isEmpty() -> ScrapeResult.Failure(PROTECTED)
+        page.userMissing -> ScrapeResult.Failure(notFound(handle), notFound = true)
+        !page.timelineFound -> ScrapeResult.Failure(LAYOUT_CHANGED)
+        page.posts.isEmpty() && page.tweetEntries > 0 -> ScrapeResult.Failure(LAYOUT_CHANGED)
+        else -> null
+    }
+}
+
 class TwitterScraper(
     private val client: OkHttpClient = defaultClient,
 ) {
@@ -30,25 +51,20 @@ class TwitterScraper(
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 when {
-                    response.code == 404 -> ScrapeResult.Failure("@$handle bulunamadı", notFound = true)
-                    response.code == 429 -> ScrapeResult.Failure("X istek sınırına ulaşıldı, daha sonra tekrar denenecek")
+                    response.code == 404 -> ScrapeResult.Failure(ScrapeErrors.notFound(handle), notFound = true)
+                    response.code == 429 -> ScrapeResult.Failure(ScrapeErrors.RATE_LIMIT)
                     !response.isSuccessful -> ScrapeResult.Failure("X sunucusu hata döndürdü (HTTP ${response.code})")
+                    response.request.url.encodedPath.contains("login") ->
+                        ScrapeResult.Failure("X giriş sayfasına yönlendirdi")
+                    !TwitterParser.hasEmbeddedData(body) -> ScrapeResult.Failure(ScrapeErrors.LAYOUT_CHANGED)
                     else -> {
                         val page = TwitterParser.parse(body, handle)
-                        if (page.profile == null && page.posts.isEmpty()) {
-                            if (response.request.url.encodedPath.contains("login")) {
-                                ScrapeResult.Failure("X giriş sayfasına yönlendirdi")
-                            } else {
-                                ScrapeResult.Failure("Sayfada gönderi verisi bulunamadı (hesap gizli olabilir ya da X sayfa yapısını değiştirmiş olabilir)")
-                            }
-                        } else {
-                            ScrapeResult.Success(page.profile, page.posts)
-                        }
+                        ScrapeErrors.check(page, handle) ?: ScrapeResult.Success(page.profile, page.posts)
                     }
                 }
             }
         } catch (e: UnknownHostException) {
-            ScrapeResult.Failure("İnternet bağlantısı yok")
+            ScrapeResult.Failure(ScrapeErrors.NO_INTERNET)
         } catch (e: SocketTimeoutException) {
             ScrapeResult.Failure("X yanıt vermedi (zaman aşımı)")
         } catch (e: IOException) {

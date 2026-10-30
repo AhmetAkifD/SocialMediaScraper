@@ -33,13 +33,22 @@ data class Post(
     val media: List<Media> = emptyList(),
     val quoted: QuotedPost? = null,
     val isPinned: Boolean = false,
+    /** Yanıtsa, yanıtlanan hesabın kullanıcı adı. */
+    val replyTo: String? = null,
+    /** Yanıtsa, yanıtlanan tweet'in kimliği. */
+    val replyToId: String? = null,
+    /** Yeniden paylaşımsa, paylaşan (takip edilen) hesap. */
+    val retweetedBy: String? = null,
     val replyCount: Long = 0,
     val retweetCount: Long = 0,
     val likeCount: Long = 0,
     val viewCount: Long? = null,
     /** Uygulamanın bu gönderiyi ilk gördüğü zaman. */
     val fetchedAt: Long = 0,
-)
+) {
+    /** Oturum açmadan da görülebilen, hesabın kendi orijinal gönderisi mi? */
+    val isOriginal get() = replyTo == null && retweetedBy == null
+}
 
 data class Profile(
     val handle: String,

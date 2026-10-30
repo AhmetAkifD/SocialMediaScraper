@@ -1,6 +1,7 @@
 package com.socialmediascraper.data
 
 import android.content.Context
+import com.socialmediascraper.scraper.DeepResult
 import com.socialmediascraper.scraper.ScrapeResult
 import com.socialmediascraper.scraper.TwitterScraper
 import kotlinx.coroutines.delay
@@ -93,11 +94,39 @@ class Repository private constructor(context: Context) {
                         lastError = null,
                     )
                 }
+                // Girişsiz sayfa yalnızca orijinal gönderileri gösterir; elle çekilen yanıtlar
+                // ve yeniden paylaşımlar karşılaştırmayı bozmasın.
                 val newestKnown = posts.value
-                    .filter { it.account.equals(account.handle, ignoreCase = true) }
+                    .filter { it.account.equals(account.handle, ignoreCase = true) && it.isOriginal }
                     .maxOfOrNull { it.createdAt }
                 val added = postStore.merge(account.handle, result.posts.map { it.copy(account = account.handle) })
                 if (newestKnown == null) emptyList() else added.filter { it.createdAt > newestKnown }
+            }
+        }
+    }
+
+    /** Bir hesabın cihazdaki en eski gönderisinin zamanı (sabitlenmiş eski gönderiler hariç). */
+    fun oldestPostTime(handle: String): Long? =
+        posts.value.filter { it.account.equals(handle, ignoreCase = true) && !it.isPinned }.minOfOrNull { it.createdAt }
+
+    /** Oturum açılmış tarayıcıyla elle yapılan taramanın sonucunu kaydeder; eklenen gönderi sayısını döndürür. */
+    fun saveDeepResult(handle: String, result: DeepResult): Int {
+        val now = System.currentTimeMillis()
+        return when (result) {
+            is DeepResult.Failure -> {
+                updateAccount(handle) { it.copy(lastCheckedAt = now, lastError = result.message) }
+                0
+            }
+            is DeepResult.Success -> {
+                updateAccount(handle) {
+                    it.copy(
+                        displayName = result.profile?.name ?: it.displayName,
+                        avatarUrl = result.profile?.avatarUrl ?: it.avatarUrl,
+                        lastCheckedAt = now,
+                        lastError = result.note,
+                    )
+                }
+                postStore.merge(handle, result.posts.map { it.copy(account = handle) }, resetPinned = false).size
             }
         }
     }

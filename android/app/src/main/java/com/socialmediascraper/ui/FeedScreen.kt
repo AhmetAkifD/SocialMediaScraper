@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -43,13 +44,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.socialmediascraper.data.Post
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeedScreen(vm: MainViewModel, snackbar: SnackbarHostState, onOpenSettings: () -> Unit) {
+fun FeedScreen(
+    vm: MainViewModel,
+    snackbar: SnackbarHostState,
+    onOpenSettings: () -> Unit,
+    onLogin: () -> Unit,
+    onDeepFetch: (handle: String) -> Unit,
+    onShowReplies: (Post) -> Unit,
+) {
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
+    val xLoggedIn by vm.xLoggedIn.collectAsStateWithLifecycle()
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Filtrelenen hesap silinirse filtreyi kaldır.
@@ -132,7 +142,46 @@ fun FeedScreen(vm: MainViewModel, snackbar: SnackbarHostState, onOpenSettings: (
                         )
                     }
                 }
-                items(visible, key = { it.id }) { post -> PostCard(post) }
+                items(visible, key = { it.id }) { post -> PostCard(post, onShowReplies = onShowReplies) }
+                item(key = "more") {
+                    LoadMoreFooter(
+                        handle = filter ?: accounts.singleOrNull()?.handle,
+                        loggedIn = xLoggedIn,
+                        onLogin = onLogin,
+                        onDeepFetch = onDeepFetch,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Liste sonunda: giriş yapılmışsa seçili hesabın eski gönderilerini elle yükleme. */
+@Composable
+private fun LoadMoreFooter(handle: String?, loggedIn: Boolean, onLogin: () -> Unit, onDeepFetch: (String) -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
+    ) {
+        when {
+            !loggedIn -> {
+                Text(
+                    "Son 5'ten eski gönderiler ve gönderilere gelen yanıtlar için X'e giriş yapın.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onLogin) { Text("X'e giriş yap") }
+            }
+            handle == null -> Text(
+                "Eski gönderileri yüklemek için yukarıdan bir hesap seçin.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                textAlign = TextAlign.Center,
+            )
+            else -> OutlinedButton(onClick = { onDeepFetch(handle) }) {
+                Text("@$handle: eski gönderileri yükle")
             }
         }
     }

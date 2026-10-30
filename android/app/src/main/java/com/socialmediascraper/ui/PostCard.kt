@@ -61,7 +61,14 @@ import com.socialmediascraper.data.Post
 import com.socialmediascraper.data.QuotedPost
 
 @Composable
-fun PostCard(post: Post, modifier: Modifier = Modifier) {
+fun PostCard(
+    post: Post,
+    modifier: Modifier = Modifier,
+    /** Yanıt etiketini ("@x kullanıcısına yanıt") göster; iç içe yanıtlar için. */
+    showReplyTo: Boolean = false,
+    /** Verilirse yanıt sayısına dokununca gönderiye gelen yanıtlar açılır. */
+    onShowReplies: ((Post) -> Unit)? = null,
+) {
     val context = LocalContext.current
     Column(
         modifier
@@ -69,13 +76,8 @@ fun PostCard(post: Post, modifier: Modifier = Modifier) {
             .clickable { openUrl(context, post.url) }
             .padding(start = 16.dp, end = 8.dp, top = 12.dp),
     ) {
-        if (post.isPinned) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 28.dp, bottom = 4.dp)) {
-                Icon(Icons.Outlined.PushPin, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.secondary)
-                Spacer(Modifier.width(4.dp))
-                Text("Sabitlenmiş", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-            }
-        }
+        if (post.isPinned) ContextLabel(Icons.Outlined.PushPin, "Sabitlenmiş")
+        post.retweetedBy?.let { ContextLabel(Icons.Outlined.Repeat, "@$it yeniden paylaştı") }
         Row {
             Avatar(post.authorAvatar, post.authorName)
             Spacer(Modifier.width(12.dp))
@@ -98,6 +100,13 @@ fun PostCard(post: Post, modifier: Modifier = Modifier) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                post.replyTo?.takeIf { showReplyTo }?.let {
+                    Text(
+                        "@$it kullanıcısına yanıt",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
                 if (post.text.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(linkify(post.text, MaterialTheme.colorScheme.primary), style = MaterialTheme.typography.bodyMedium)
@@ -110,10 +119,19 @@ fun PostCard(post: Post, modifier: Modifier = Modifier) {
                     Spacer(Modifier.height(8.dp))
                     QuotedBox(it, onClick = { openUrl(context, it.url) })
                 }
-                PostActions(post, context)
+                PostActions(post, context, onShowReplies)
             }
         }
         HorizontalDivider(Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    }
+}
+
+@Composable
+private fun ContextLabel(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 28.dp, bottom = 4.dp)) {
+        Icon(icon, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.secondary)
+        Spacer(Modifier.width(4.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
     }
 }
 
@@ -214,9 +232,14 @@ private fun QuotedBox(quoted: QuotedPost, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PostActions(post: Post, context: Context) {
+private fun PostActions(post: Post, context: Context, onShowReplies: ((Post) -> Unit)?) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Stat(Icons.Outlined.ChatBubbleOutline, post.replyCount)
+        Stat(
+            Icons.Outlined.ChatBubbleOutline,
+            post.replyCount,
+            onClick = onShowReplies?.let { { it(post) } },
+            description = "Yanıtları göster",
+        )
         Stat(Icons.Outlined.Repeat, post.retweetCount)
         Stat(Icons.Outlined.FavoriteBorder, post.likeCount)
         post.viewCount?.let { Stat(Icons.Outlined.BarChart, it) }
@@ -228,8 +251,17 @@ private fun PostActions(post: Post, context: Context) {
 }
 
 @Composable
-private fun Stat(icon: ImageVector, value: Long) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 14.dp)) {
+private fun Stat(icon: ImageVector, value: Long, onClick: (() -> Unit)? = null, description: String? = null) {
+    val modifier = if (onClick != null) {
+        Modifier
+            .padding(end = 8.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(onClickLabel = description, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 8.dp)
+    } else {
+        Modifier.padding(end = 14.dp)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
         Icon(icon, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.secondary)
         Spacer(Modifier.width(3.dp))
         Text(formatCount(value), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)

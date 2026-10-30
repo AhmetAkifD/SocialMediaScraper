@@ -19,7 +19,7 @@ class PostStore(context: Context) {
      * Mevcut gönderilerin sayaçları (beğeni vb.) güncellenir, ilk görülme zamanı korunur.
      */
     @Synchronized
-    fun merge(account: String, fetched: List<Post>): List<Post> {
+    fun merge(account: String, fetched: List<Post>, resetPinned: Boolean = true): List<Post> {
         val byId = _posts.value.associateBy { it.id }.toMutableMap()
         val added = mutableListOf<Post>()
         for (post in fetched) {
@@ -28,9 +28,11 @@ class PostStore(context: Context) {
             byId[post.id] = if (old != null) post.copy(fetchedAt = old.fetchedAt) else post
         }
         // Gönderinin sabitlenme durumu yalnızca son çekimde görülenler için geçerlidir.
-        val fetchedIds = fetched.map { it.id }.toSet()
-        byId.replaceAll { id, p ->
-            if (p.account.equals(account, true) && p.isPinned && id !in fetchedIds) p.copy(isPinned = false) else p
+        if (resetPinned) {
+            val fetchedIds = fetched.map { it.id }.toSet()
+            byId.replaceAll { id, p ->
+                if (p.account.equals(account, true) && p.isPinned && id !in fetchedIds) p.copy(isPinned = false) else p
+            }
         }
         save(trim(byId.values))
         return added
@@ -63,9 +65,12 @@ class PostStore(context: Context) {
 
     private fun load(): List<Post> = runCatching {
         JsonCodec.postsFromJson(String(file.readFully()))
-    }.getOrDefault(emptyList()).sortedByDescending { it.createdAt }
+    }.getOrDefault(emptyList())
+        // Hesapların kendi yazdığı yanıtlar saklanmaz (önceki bir sürüm saklıyordu).
+        .filter { it.replyTo == null }
+        .sortedByDescending { it.createdAt }
 
     private companion object {
-        const val MAX_PER_ACCOUNT = 200
+        const val MAX_PER_ACCOUNT = 500
     }
 }
