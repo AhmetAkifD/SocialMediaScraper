@@ -17,7 +17,9 @@ import androidx.navigation.compose.rememberNavController
 import com.socialmediascraper.notify.Notifier
 import com.socialmediascraper.ui.FeedScreen
 import com.socialmediascraper.ui.MainViewModel
+import com.socialmediascraper.data.Post
 import com.socialmediascraper.ui.DeepFetchScreen
+import com.socialmediascraper.ui.RepliesScreen
 import com.socialmediascraper.ui.SettingsScreen
 import com.socialmediascraper.ui.XLoginScreen
 import com.socialmediascraper.ui.theme.AppTheme
@@ -54,6 +56,15 @@ class MainActivity : ComponentActivity() {
                 }
 
                 NavHost(navController = nav, startDestination = "feed") {
+                    // Yanıtlar için X girişi gerekir; giriş yoksa önce giriş ekranı açılır.
+                    fun showReplies(post: Post) {
+                        if (vm.xLoggedIn.value) {
+                            nav.navigate("replies/${post.authorHandle}/${post.url.substringAfterLast('/')}")
+                        } else {
+                            vm.notify("Gönderilere gelen yanıtları görmek için X'e giriş yapın")
+                            nav.navigate("login") { launchSingleTop = true }
+                        }
+                    }
                     // Ekran kendini kapatmak istediğinde yalnızca hâlâ en üstteyse geri dön.
                     fun close(route: String) {
                         if (nav.currentDestination?.route == route) nav.popBackStack()
@@ -64,6 +75,7 @@ class MainActivity : ComponentActivity() {
                             onOpenSettings = { nav.navigate("settings") { launchSingleTop = true } },
                             onLogin = { nav.navigate("login") { launchSingleTop = true } },
                             onDeepFetch = { handle -> nav.navigate("deep/$handle") { launchSingleTop = true } },
+                            onShowReplies = ::showReplies,
                         )
                     }
                     composable("settings") {
@@ -78,6 +90,17 @@ class MainActivity : ComponentActivity() {
                             vm.onLoginFinished(loggedIn)
                             close("login")
                         }
+                    }
+                    composable("replies/{handle}/{id}") { entry ->
+                        val handle = entry.arguments?.getString("handle").orEmpty()
+                        val id = entry.arguments?.getString("id").orEmpty()
+                        RepliesScreen(
+                            handle = handle,
+                            tweetId = id,
+                            initialPost = vm.posts.value.firstOrNull { it.url.endsWith("/status/$id") },
+                            onBack = { nav.popBackStack() },
+                            onShowReplies = ::showReplies,
+                        )
                     }
                     composable("deep/{handle}") { entry ->
                         val handle = entry.arguments?.getString("handle").orEmpty()

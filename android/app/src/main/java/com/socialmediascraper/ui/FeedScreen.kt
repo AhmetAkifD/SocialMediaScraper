@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.socialmediascraper.data.Post
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,23 +54,20 @@ fun FeedScreen(
     onOpenSettings: () -> Unit,
     onLogin: () -> Unit,
     onDeepFetch: (handle: String) -> Unit,
+    onShowReplies: (Post) -> Unit,
 ) {
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val xLoggedIn by vm.xLoggedIn.collectAsStateWithLifecycle()
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
-    var showReplies by rememberSaveable { mutableStateOf(true) }
 
     // Filtrelenen hesap silinirse filtreyi kaldır.
     if (filter != null && accounts.none { it.handle.equals(filter, ignoreCase = true) }) filter = null
 
-    val visible = remember(posts, filter, showReplies) {
-        posts.filter { p ->
-            (filter == null || p.account.equals(filter, ignoreCase = true)) && (showReplies || p.replyTo == null)
-        }
+    val visible = remember(posts, filter) {
+        if (filter == null) posts else posts.filter { it.account.equals(filter, ignoreCase = true) }
     }
-    val hasReplies = remember(posts) { posts.any { it.replyTo != null } }
     val failing = accounts.filter { it.lastError != null }
     val listState = rememberLazyListState()
 
@@ -102,21 +100,12 @@ fun FeedScreen(
                 return@PullToRefreshBox
             }
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                if (accounts.size > 1 || hasReplies) {
+                if (accounts.size > 1) {
                     item(key = "filters") {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            if (hasReplies) {
-                                item {
-                                    FilterChip(
-                                        selected = showReplies,
-                                        onClick = { showReplies = !showReplies },
-                                        label = { Text("Yanıtlar") },
-                                    )
-                                }
-                            }
                             item {
                                 FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("Tümü") })
                             }
@@ -153,7 +142,7 @@ fun FeedScreen(
                         )
                     }
                 }
-                items(visible, key = { it.id }) { post -> PostCard(post) }
+                items(visible, key = { it.id }) { post -> PostCard(post, onShowReplies = onShowReplies) }
                 item(key = "more") {
                     LoadMoreFooter(
                         handle = filter ?: accounts.singleOrNull()?.handle,
@@ -167,7 +156,7 @@ fun FeedScreen(
     }
 }
 
-/** Liste sonunda: giriş yapılmışsa seçili hesabın yanıtlarını/eski gönderilerini elle yükleme. */
+/** Liste sonunda: giriş yapılmışsa seçili hesabın eski gönderilerini elle yükleme. */
 @Composable
 private fun LoadMoreFooter(handle: String?, loggedIn: Boolean, onLogin: () -> Unit, onDeepFetch: (String) -> Unit) {
     Column(
@@ -177,7 +166,7 @@ private fun LoadMoreFooter(handle: String?, loggedIn: Boolean, onLogin: () -> Un
         when {
             !loggedIn -> {
                 Text(
-                    "Yanıtlar ve son 5'ten eski gönderiler için X'e giriş yapın.",
+                    "Son 5'ten eski gönderiler ve gönderilere gelen yanıtlar için X'e giriş yapın.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                     textAlign = TextAlign.Center,
@@ -186,13 +175,13 @@ private fun LoadMoreFooter(handle: String?, loggedIn: Boolean, onLogin: () -> Un
                 OutlinedButton(onClick = onLogin) { Text("X'e giriş yap") }
             }
             handle == null -> Text(
-                "Yanıtları ve eski gönderileri yüklemek için yukarıdan bir hesap seçin.",
+                "Eski gönderileri yüklemek için yukarıdan bir hesap seçin.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
                 textAlign = TextAlign.Center,
             )
             else -> OutlinedButton(onClick = { onDeepFetch(handle) }) {
-                Text("@$handle: yanıtları ve eski gönderileri yükle")
+                Text("@$handle: eski gönderileri yükle")
             }
         }
     }

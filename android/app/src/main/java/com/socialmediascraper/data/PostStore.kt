@@ -65,7 +65,10 @@ class PostStore(context: Context) {
 
     private fun load(): List<Post> = runCatching {
         JsonCodec.postsFromJson(String(file.readFully()))
-    }.getOrDefault(emptyList()).sortedByDescending { it.createdAt }
+    }.getOrDefault(emptyList())
+        // Hesapların kendi yazdığı yanıtlar saklanmaz (önceki bir sürüm saklıyordu).
+        .filter { it.replyTo == null }
+        .sortedByDescending { it.createdAt }
 
     private companion object {
         const val MAX_PER_ACCOUNT = 500

@@ -35,6 +35,8 @@ data class Post(
     val isPinned: Boolean = false,
     /** Yanıtsa, yanıtlanan hesabın kullanıcı adı. */
     val replyTo: String? = null,
+    /** Yanıtsa, yanıtlanan tweet'in kimliği. */
+    val replyToId: String? = null,
     /** Yeniden paylaşımsa, paylaşan (takip edilen) hesap. */
     val retweetedBy: String? = null,
     val replyCount: Long = 0,

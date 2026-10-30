@@ -85,6 +85,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun notify(message: String) {
+        _messages.trySend(message)
+    }
+
     fun refreshLoginState() {
         XSession.refresh()
     }

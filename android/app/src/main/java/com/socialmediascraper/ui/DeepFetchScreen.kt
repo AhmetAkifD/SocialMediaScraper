@@ -29,8 +29,8 @@ import com.socialmediascraper.scraper.DeepProgress
 import com.socialmediascraper.scraper.XWebScraper
 
 /**
- * Oturum açılmış tarayıcıda hesabın "Yanıtlar" sekmesini açıp aşağı kaydırarak
- * yanıtları ve eski gönderileri toplar. Sayfa görünür kalır; X bir doğrulama
+ * Oturum açılmış tarayıcıda hesabın "Gönderiler" sekmesini açıp aşağı kaydırarak
+ * eski gönderileri toplar. Sayfa görünür kalır; X bir doğrulama
  * isterse kullanıcı doğrudan buradan yanıtlayabilir.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,7 +43,7 @@ fun DeepFetchScreen(vm: MainViewModel, handle: String, onDone: () -> Unit) {
 
     LaunchedEffect(webView) {
         val view = webView ?: return@LaunchedEffect
-        val result = scraper.run(view, handle, vm.oldestPostTime(handle)) { progress = it }
+        val result = scraper.fetchTimeline(view, handle, vm.oldestPostTime(handle)) { progress = it }
         vm.onDeepFetchFinished(handle, result)
         onDone()
     }
@@ -59,7 +59,7 @@ fun DeepFetchScreen(vm: MainViewModel, handle: String, onDone: () -> Unit) {
         Column(Modifier.fillMaxSize().padding(padding)) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(
-                if (progress.pages == 0) "Yanıtlar sayfası açılıyor…"
+                if (progress.pages == 0) "Gönderiler sayfası açılıyor…"
                 else "${progress.pages}. sayfa · @$handle hesabına ait ${progress.found} gönderi bulundu",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(16.dp),

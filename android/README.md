@@ -10,7 +10,7 @@ Giriş yapmanız, API anahtarı ya da ücretli bir hizmet gerekmez.
 - Metin (uzun tweet'ler dahil), fotoğraf, video/GIF önizlemesi, alıntılanan tweet, sabitlenmiş gönderi, yanıt/RT/beğeni/görüntülenme sayıları
 - Gönderiyi X'te açma, paylaşma, metni kopyalama
 - Arka planda periyodik kontrol (15 dk – 24 saat) ve yeni gönderi bildirimi
-- İsteğe bağlı X girişiyle bir hesabın **yanıtlarını ve son 5'ten eski gönderilerini** elle yükleme
+- İsteğe bağlı X girişiyle **gönderilere gelen yanıtları** görme ve bir hesabın **son 5'ten eski gönderilerini** elle yükleme
 - X sayfa yapısını değiştirirse hesabın altında "X sayfa yapısı değişmiş…" hatası
 - Gönderiler cihazda saklanır (hesap başına en fazla 500)
 
@@ -31,18 +31,25 @@ Kısıtlar:
 **Ayarlar → X hesabı → X'e giriş yap** ile uygulama içinde x.com'un kendi giriş sayfası açılır. Şifre yalnızca
 x.com'a gider; uygulama sadece tarayıcının oturum çerezini kullanır. **Çıkış yap** çerezleri siler.
 
-Giriş yapıldıktan sonra akışta bir hesap seçilip listenin sonundaki **"yanıtları ve eski gönderileri yükle"**
-düğmesine basılınca hesabın *Yanıtlar* sekmesi görünür bir tarayıcıda açılır, aşağı kaydırılır ve X'in kendi
-GraphQL yanıtları yakalanıp ayrıştırılır (`scraper/XWebScraper.kt`, `assets/x_hook.js`). Tarama, cihazdaki en eski
-gönderiden daha eski 40 gönderi bulununca, zaman tünelinin sonuna gelince ya da en fazla 20 kaydırmada durur.
+Giriş yapıldıktan sonra:
 
-- Bu tarama **yalnızca elle** çalışır; arka plan kontrolü girişi kullanmaz (istek sınırı ve hesap güvenliği için).
+- **Gönderiye gelen yanıtlar:** bir gönderinin altındaki 💬 (yanıt sayısı) simgesine dokunun. Gönderi sayfası
+  görünmeyen bir tarayıcıda açılır ve yanıtlar uygulama içinde listelenir; yanıtlara verilen yanıtlar girintilidir.
+  **Daha fazla yanıt yükle** sayfayı kaydırır ve X'in "diğer yanıtları göster" düğmelerine basar.
+- **Eski gönderiler:** akışta bir hesap seçip listenin sonundaki **"eski gönderileri yükle"** düğmesine basın.
+  Hesabın *Gönderiler* sekmesi açılır ve aşağı kaydırılır. Hesabın başkalarına yazdığı yanıtlar kaydedilmez.
+  Tarama, cihazdaki en eski gönderiden daha eski 40 gönderi bulununca, zaman tünelinin sonuna gelince ya da en fazla
+  20 kaydırmada durur.
+
+Her ikisinde de X'in kendi GraphQL yanıtları yakalanıp ayrıştırılır (`scraper/XWebScraper.kt`, `assets/x_hook.js`).
+
+- Bunlar **yalnızca elle** çalışır; arka plan kontrolü girişi kullanmaz (istek sınırı ve hesap güvenliği için).
 - X otomatik veri çekmeyi kullanım koşullarında yasaklar; hesap kilitlenebilir. Ana hesap yerine ayrı bir hesap kullanın.
 - X bir doğrulama isterse tarama ekranındaki sayfadan yanıtlanabilir.
 
 ### Hata mesajları
 
-Hatalar hesabın altında (akışta ve Ayarlar'da) görünür:
+Hatalar hesabın altında (akışta ve Ayarlar'da), yanıtlar ekranındakiler ise yanıt listesinin sonunda görünür:
 
 | Mesaj | Anlamı |
 | --- | --- |

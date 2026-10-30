@@ -88,6 +88,35 @@ class TwitterParserTest {
     }
 
     @Test
+    fun parsesConversationReplies() {
+        fun tweet(id: String, handle: String, text: String, date: String, replyTo: String? = null, replyToId: String? = null) =
+            """{"__typename":"Tweet","rest_id":"$id","core":{"user_results":{"result":{"__typename":"User","legacy":{"screen_name":"$handle","name":"$handle"}}}},""" +
+                """"legacy":{"full_text":"$text","created_at":"$date","favorite_count":1""" +
+                (replyTo?.let { ""","in_reply_to_screen_name":"$it","in_reply_to_status_id_str":"$replyToId"""" } ?: "") + "}}"
+        val parent = tweet("1", "baska", "ilk", "Wed Oct 15 10:00:00 +0000 2026")
+        val focal = tweet("2", "Ornek", "@baska gönderi", "Wed Oct 15 11:00:00 +0000 2026", "baska", "1")
+        val reply = tweet("3", "okur", "@Ornek harika", "Wed Oct 15 12:00:00 +0000 2026", "Ornek", "2")
+        val nested = tweet("4", "Ornek", "@okur teşekkürler", "Wed Oct 15 13:00:00 +0000 2026", "okur", "3")
+        val related = tweet("9", "yabanci", "başka konu", "Wed Oct 15 14:00:00 +0000 2026")
+        val json = JSONObject(
+            """{"data":{"threaded_conversation_with_injections_v2":{"instructions":[{"type":"TimelineAddEntries","entries":[""" +
+                entry("tweet-1", parent) + "," + entry("tweet-2", focal) + "," +
+                """{"entryId":"conversationthread-3","content":{"items":[""" +
+                """{"item":{"itemContent":{"tweet_results":{"result":$reply}}}},""" +
+                """{"item":{"itemContent":{"tweet_results":{"result":$nested}}}}]}},""" +
+                """{"entryId":"tweetdetailrelatedtweets-1","content":{"items":[{"item":{"itemContent":{"tweet_results":{"result":$related}}}}]}}""" +
+                "]}]}}}",
+        )
+
+        val conversation = TwitterParser.parseConversation(listOf(json), "2")
+        assertEquals("2", conversation.focal?.id)
+        assertEquals(listOf("3", "4"), conversation.replies.map { it.id })
+        assertEquals("harika", conversation.replies[0].text)
+        assertEquals("okur", conversation.replies[0].authorHandle)
+        assertEquals("3", conversation.replies[1].replyToId)
+    }
+
+    @Test
     fun detectsLayoutChange() {
         val noTimeline = JSONObject("""{"data":{"user_result_by_screen_name":{"result":{"__typename":"User","core":{"name":"A","screen_name":"A"}}}}}""")
         val page = TwitterParser.parsePayloads(listOf(noTimeline), "A", ownOnly = false)

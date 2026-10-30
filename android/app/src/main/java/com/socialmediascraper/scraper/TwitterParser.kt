@@ -22,6 +22,13 @@ class ParsedProfilePage(
     val userMissing: Boolean = false,
 )
 
+class ParsedConversation(
+    val focal: Post?,
+    val replies: List<Post>,
+    val timelineFound: Boolean,
+    val tweetEntries: Int,
+)
+
 /**
  * X'in GraphQL yanıtlarını ayrıştırır.
  *
@@ -34,6 +41,7 @@ object TwitterParser {
 
     private const val RESULT_MARKER = "kind:\"Result.Ok\",value:\""
     private val LEADING_MENTIONS = Regex("""^(@\w+\s+)+""")
+    private val SKIPPED_ENTRY_PREFIXES = listOf("promoted", "tweetdetailrelatedtweets", "who-to-follow", "cursor-")
 
     fun hasEmbeddedData(html: String) = html.contains(RESULT_MARKER)
 
@@ -91,6 +99,30 @@ object TwitterParser {
             isProtected = isProtected,
             userMissing = userMissing && profile == null,
         )
+    }
+
+    /**
+     * Bir tweet'in detay sayfasındaki (TweetDetail) konuşmayı ayrıştırır: [focalId] tweet'inin
+     * kendisi ve ona gelen yanıtlar, X'in gösterdiği sırayla. Üst zincirdeki (yanıtlanan)
+     * tweet'ler ve öneri blokları atlanır.
+     */
+    fun parseConversation(payloads: List<JSONObject>, focalId: String, now: Long = System.currentTimeMillis()): ParsedConversation {
+        val tweets = LinkedHashMap<String, Post>()
+        var timelineFound = false
+        var tweetEntries = 0
+        for (payload in payloads) {
+            val data = payload.optJSONObject("data") ?: continue
+            val timeline = findTimelineEntries(data)
+            if (timeline.instructionsFound) timelineFound = true
+            tweetEntries += timeline.tweetEntries
+            timeline.tweets.forEach { (tweet, _) ->
+                val post = parseTweet(tweet, account = "i", pinned = false, now = now) ?: return@forEach
+                tweets.putIfAbsent(post.id, post.copy(account = post.authorHandle))
+            }
+        }
+        val focal = tweets[focalId]
+        val replies = tweets.values.filter { it.id != focalId && (focal == null || it.createdAt >= focal.createdAt) }
+        return ParsedConversation(focal, replies, timelineFound, tweetEntries)
     }
 
     private fun Profile.completeness() = (if (avatarUrl != null) 2 else 0) + (if (name != handle) 1 else 0)
@@ -203,7 +235,8 @@ object TwitterParser {
                 }
                 for (entry in entries) {
                     val entryId = entry.optString("entryId", entry.optString("entry_id"))
-                    if (entryId.startsWith("promoted")) continue // reklamlar
+                    // Reklamlar ve "keşfet / takip önerisi" blokları gönderi değil.
+                    if (SKIPPED_ENTRY_PREFIXES.any { entryId.startsWith(it) }) continue
                     if (entryId.startsWith("tweet-") || entryId.startsWith("profile-conversation-")) tweetEntries++
                     val pinned = type == "TimelinePinEntry" || entry.toString().contains("\"context_type\":\"Pin\"")
                     val tweetResults = mutableListOf<JSONObject>()
@@ -279,6 +312,8 @@ object TwitterParser {
 
         val text = tweetText(tweet, stripTrailingLink = media.isNotEmpty() || quoted != null)
         val createdAt = tweetTime(tweet, id)
+        val replyToId = legacy?.optStringOrNull("in_reply_to_status_id_str")
+            ?: details?.optStringOrNull("in_reply_to_status_id_str")
         val replyTo = legacy?.optStringOrNull("in_reply_to_screen_name")
             ?: details?.optStringOrNull("in_reply_to_screen_name")
             ?: tweet.optStringOrNull("in_reply_to_screen_name")
@@ -301,6 +336,7 @@ object TwitterParser {
             quoted = quoted,
             isPinned = pinned,
             replyTo = replyTo,
+            replyToId = replyToId,
             replyCount = counts?.optLong("reply_count") ?: 0,
             retweetCount = counts?.optLong("retweet_count") ?: 0,
             likeCount = counts?.optLong("favorite_count") ?: 0,
@@ -357,7 +393,8 @@ object TwitterParser {
                 if (short != null && expanded != null && short.startsWith("https://t.co/")) {
                     out[short] = expanded
                 } else {
-                    obj.keys().forEach { collectUrlEntities(obj.opt(it), out) }
+                    // Medya bağlantıları açılmaz; metnin sonundaki t.co olarak kalıp kırpılırlar.
+                    obj.keys().forEach { if (it != "media") collectUrlEntities(obj.opt(it), out) }
                 }
             }
             is JSONArray -> for (i in 0 until obj.length()) collectUrlEntities(obj.opt(i), out)
