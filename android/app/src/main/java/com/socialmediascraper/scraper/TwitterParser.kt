@@ -10,39 +10,94 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class ParsedProfilePage(val profile: Profile?, val posts: List<Post>)
+class ParsedProfilePage(
+    val profile: Profile?,
+    val posts: List<Post>,
+    /** Yanıtlarda bir zaman tüneli (instructions) bulundu mu? */
+    val timelineFound: Boolean = false,
+    /** Zaman tünelindeki tweet girdisi sayısı (ayrıştırılamasalar bile). */
+    val tweetEntries: Int = 0,
+    val isProtected: Boolean = false,
+    /** X kullanıcı sorgusuna boş yanıt verdi (hesap yok). */
+    val userMissing: Boolean = false,
+)
 
 /**
- * x.com profil sayfasının (oturum açmadan) HTML'ini ayrıştırır.
+ * X'in GraphQL yanıtlarını ayrıştırır.
  *
- * Sayfa sunucu tarafında render edilir ve X'in kendi GraphQL yanıtları
+ * Oturum açılmadan istenen profil sayfası sunucu tarafında render edilir ve yanıtlar
  * `kind:"Result.Ok",value:"<JSON>"` biçiminde JavaScript string'i olarak gömülüdür.
- * Bu yanıtlardaki profil ve zaman tüneli verileri okunur; böylece kırılgan HTML
- * seçicilerine ihtiyaç kalmaz.
+ * Oturum açılmış tarayıcıdan yakalanan yanıtlar ise düz JSON'dur; ikisi de
+ * [parsePayloads] ile okunur. Böylece kırılgan HTML seçicilerine ihtiyaç kalmaz.
  */
 object TwitterParser {
 
     private const val RESULT_MARKER = "kind:\"Result.Ok\",value:\""
+    private val LEADING_MENTIONS = Regex("""^(@\w+\s+)+""")
 
-    fun parse(html: String, account: String, now: Long = System.currentTimeMillis()): ParsedProfilePage {
-        val payloads = extractGraphQlPayloads(html)
+    fun hasEmbeddedData(html: String) = html.contains(RESULT_MARKER)
+
+    fun parse(html: String, account: String, now: Long = System.currentTimeMillis()): ParsedProfilePage =
+        parsePayloads(extractGraphQlPayloads(html), account, ownOnly = false, now = now)
+
+    /**
+     * @param ownOnly true ise yalnızca [account] tarafından yazılan ya da yeniden paylaşılan
+     * gönderiler tutulur (yanıtlar sekmesinde başkalarının konuşma tweet'leri de gelir).
+     */
+    fun parsePayloads(
+        payloads: List<JSONObject>,
+        account: String,
+        ownOnly: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ): ParsedProfilePage {
         var profile: Profile? = null
+        var timelineFound = false
+        var tweetEntries = 0
+        var isProtected = false
+        var userMissing = false
         val posts = LinkedHashMap<String, Post>()
 
         for (payload in payloads) {
             val data = payload.optJSONObject("data") ?: continue
-            val user = data.optJSONObject("user_result_by_screen_name")?.optJSONObject("result") ?: continue
-            if (profile == null) profile = parseProfile(user)
-
-            findTimelineEntries(user).forEach { (tweet, pinned) ->
-                parseTweet(tweet, account, pinned, now)?.let { post ->
-                    val existing = posts[post.id]
-                    posts[post.id] = if (existing != null) existing.copy(isPinned = existing.isPinned || pinned) else post
+            val userWrapper = data.optJSONObject("user_result_by_screen_name") ?: data.optJSONObject("user")
+            val user = userWrapper?.optJSONObject("result")
+            if (data.length() == 0 || (userWrapper != null && user == null)) userMissing = true
+            if (user != null) {
+                // Sayfada aynı kullanıcının eksik (yalnızca kullanıcı adı) ve tam kopyaları olabilir.
+                val candidate = parseProfile(user)
+                if (candidate != null && (profile == null || profile.completeness() < candidate.completeness())) {
+                    profile = candidate
                 }
+                if (isProtectedUser(user)) isProtected = true
+            }
+
+            val timeline = findTimelineEntries(data)
+            if (timeline.instructionsFound) timelineFound = true
+            tweetEntries += timeline.tweetEntries
+            timeline.tweets.forEach { (tweet, pinned) ->
+                val post = parseTweet(tweet, account, pinned, now) ?: return@forEach
+                if (ownOnly && !post.authorHandle.equals(account, true) && !post.retweetedBy.equals(account, true)) {
+                    return@forEach
+                }
+                val existing = posts[post.id]
+                posts[post.id] = if (existing != null) existing.copy(isPinned = existing.isPinned || pinned) else post
             }
         }
-        return ParsedProfilePage(profile, posts.values.sortedByDescending { it.createdAt })
+        return ParsedProfilePage(
+            profile = profile,
+            posts = posts.values.sortedByDescending { it.createdAt },
+            timelineFound = timelineFound,
+            tweetEntries = tweetEntries,
+            isProtected = isProtected,
+            userMissing = userMissing && profile == null,
+        )
     }
+
+    private fun Profile.completeness() = (if (avatarUrl != null) 2 else 0) + (if (name != handle) 1 else 0)
+
+    private fun isProtectedUser(user: JSONObject): Boolean =
+        user.optJSONObject("privacy")?.optBoolean("protected") == true ||
+            user.optJSONObject("legacy")?.optBoolean("protected") == true
 
     /** HTML içindeki tüm başarılı GraphQL yanıtlarını JSON olarak döndürür. */
     fun extractGraphQlPayloads(html: String): List<JSONObject> {
@@ -124,11 +179,18 @@ object TwitterParser {
         return Profile(handle, name, avatar?.let(::biggerAvatar))
     }
 
+    private class TimelineScan(
+        val tweets: List<Pair<JSONObject, Boolean>>,
+        val instructionsFound: Boolean,
+        val tweetEntries: Int,
+    )
+
     /** Zaman tüneli talimatlarındaki (instructions) tweet sonuçlarını sırayla bulur. */
-    private fun findTimelineEntries(root: JSONObject): List<Pair<JSONObject, Boolean>> {
+    private fun findTimelineEntries(root: JSONObject): TimelineScan {
         val out = mutableListOf<Pair<JSONObject, Boolean>>()
         val instructionLists = mutableListOf<JSONArray>()
         collectArrays(root, "instructions", instructionLists)
+        var tweetEntries = 0
 
         for (instructions in instructionLists) {
             for (i in 0 until instructions.length()) {
@@ -140,6 +202,9 @@ object TwitterParser {
                     for (j in 0 until arr.length()) arr.optJSONObject(j)?.let(entries::add)
                 }
                 for (entry in entries) {
+                    val entryId = entry.optString("entryId", entry.optString("entry_id"))
+                    if (entryId.startsWith("promoted")) continue // reklamlar
+                    if (entryId.startsWith("tweet-") || entryId.startsWith("profile-conversation-")) tweetEntries++
                     val pinned = type == "TimelinePinEntry" || entry.toString().contains("\"context_type\":\"Pin\"")
                     val tweetResults = mutableListOf<JSONObject>()
                     collectTweetResults(entry, tweetResults)
@@ -147,7 +212,7 @@ object TwitterParser {
                 }
             }
         }
-        return out
+        return TimelineScan(out, instructionLists.isNotEmpty(), tweetEntries)
     }
 
     private fun collectArrays(obj: Any?, key: String, out: MutableList<JSONArray>) {
@@ -183,6 +248,23 @@ object TwitterParser {
 
     private fun parseTweet(tweet: JSONObject, account: String, pinned: Boolean, now: Long): Post? {
         val id = tweet.optStringOrNull("rest_id") ?: tweet.optJSONObject("legacy")?.optStringOrNull("id_str") ?: return null
+
+        // Yeniden paylaşım: içerik asıl tweet'ten, zaman ve kimlik yeniden paylaşımdan alınır.
+        val retweeted = (tweet.optJSONObject("legacy")?.optJSONObject("retweeted_status_result")
+            ?: tweet.optJSONObject("retweeted_status_result"))?.optJSONObject("result")?.let(::unwrapTweet)
+        if (retweeted != null) {
+            val original = parseTweet(retweeted, account, pinned = false, now = now) ?: return null
+            val retweeter = tweet.optJSONObject("core")?.optJSONObject("user_results")?.optJSONObject("result")
+                ?.let(::parseProfile)?.handle ?: account
+            return original.copy(
+                id = id,
+                createdAt = tweetTime(tweet, id),
+                isPinned = pinned,
+                retweetedBy = retweeter,
+                fetchedAt = now,
+            )
+        }
+
         val details = tweet.optJSONObject("details")
         val legacy = tweet.optJSONObject("legacy")
 
@@ -196,9 +278,11 @@ object TwitterParser {
             ?.let(::unwrapTweet)?.let(::parseQuoted)
 
         val text = tweetText(tweet, stripTrailingLink = media.isNotEmpty() || quoted != null)
-        val createdAt = details?.optLong("created_at_ms", 0L)?.takeIf { it > 0 }
-            ?: legacy?.optStringOrNull("created_at")?.let(::parseLegacyDate)
-            ?: snowflakeTime(id)
+        val createdAt = tweetTime(tweet, id)
+        val replyTo = legacy?.optStringOrNull("in_reply_to_screen_name")
+            ?: details?.optStringOrNull("in_reply_to_screen_name")
+            ?: tweet.optStringOrNull("in_reply_to_screen_name")
+            ?: tweet.optJSONObject("reply_to_user_results")?.optJSONObject("result")?.let(::parseProfile)?.handle
 
         val counts = tweet.optJSONObject("counts") ?: legacy
         val views = tweet.optJSONObject("views")?.optStringOrNull("count")?.toLongOrNull()
@@ -209,12 +293,14 @@ object TwitterParser {
             authorHandle = handle,
             authorName = name,
             authorAvatar = authorProfile?.avatarUrl,
-            text = text,
+            // X yanıtların başındaki @bahsetmeleri arayüzde göstermiyor; etiket zaten var.
+            text = if (replyTo != null) text.replace(LEADING_MENTIONS, "").ifBlank { text } else text,
             createdAt = createdAt,
             url = "https://x.com/$handle/status/$id",
             media = media,
             quoted = quoted,
             isPinned = pinned,
+            replyTo = replyTo,
             replyCount = counts?.optLong("reply_count") ?: 0,
             retweetCount = counts?.optLong("retweet_count") ?: 0,
             likeCount = counts?.optLong("favorite_count") ?: 0,
@@ -222,6 +308,11 @@ object TwitterParser {
             fetchedAt = now,
         )
     }
+
+    private fun tweetTime(tweet: JSONObject, id: String): Long =
+        tweet.optJSONObject("details")?.optLong("created_at_ms", 0L)?.takeIf { it > 0 }
+            ?: tweet.optJSONObject("legacy")?.optStringOrNull("created_at")?.let(::parseLegacyDate)
+            ?: snowflakeTime(id)
 
     private fun parseQuoted(tweet: JSONObject): QuotedPost? {
         val id = tweet.optStringOrNull("rest_id") ?: return null

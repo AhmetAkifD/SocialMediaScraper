@@ -1,6 +1,7 @@
 package com.socialmediascraper.scraper
 
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -45,6 +46,59 @@ class TwitterParserTest {
         assertEquals(42L, post.viewCount)
         assertEquals(1, post.media.size)
         assertEquals("https://x.com/Ornek/status/2111336450058817751", post.url)
+    }
+
+    private fun legacyTweet(id: String, handle: String, text: String, extra: String = "") =
+        """{"__typename":"Tweet","rest_id":"$id","core":{"user_results":{"result":{"__typename":"User","legacy":{"screen_name":"$handle","name":"$handle"}}}},""" +
+            """"legacy":{"full_text":"$text","created_at":"Wed Oct 16 10:00:00 +0000 2026","favorite_count":3$extra}}"""
+
+    private fun entry(id: String, tweet: String) =
+        """{"entryId":"$id","content":{"itemContent":{"tweet_results":{"result":$tweet}}}}"""
+
+    @Test
+    fun parsesLoggedInRepliesAndRetweets() {
+        val reply = legacyTweet("3", "Ornek", "@baska evet", ""","in_reply_to_screen_name":"baska"""")
+        val parent = legacyTweet("2", "baska", "soru?")
+        val retweet = legacyTweet(
+            "4", "Ornek", "RT @baska: soru?",
+            ""","retweeted_status_result":{"result":$parent}""",
+        )
+        val ad = legacyTweet("5", "Reklam", "satın al")
+        val json = JSONObject(
+            """{"data":{"user":{"result":{"__typename":"User","timeline":{"timeline":{"instructions":[{"type":"TimelineAddEntries","entries":[""" +
+                listOf(
+                    """{"entryId":"profile-conversation-1","content":{"items":[""" +
+                        """{"item":{"itemContent":{"tweet_results":{"result":$parent}}}},""" +
+                        """{"item":{"itemContent":{"tweet_results":{"result":$reply}}}}]}}""",
+                    entry("tweet-4", retweet),
+                    entry("promoted-tweet-5", ad),
+                ).joinToString(",") + "]}]}}}}}}",
+        )
+
+        val page = TwitterParser.parsePayloads(listOf(json), "Ornek", ownOnly = true)
+        assertEquals(listOf("3", "4"), page.posts.map { it.id }.sorted())
+        val r = page.posts.first { it.id == "3" }
+        assertEquals("baska", r.replyTo)
+        assertEquals("evet", r.text)
+        val rt = page.posts.first { it.id == "4" }
+        assertEquals("Ornek", rt.retweetedBy)
+        assertEquals("baska", rt.authorHandle)
+        assertEquals("soru?", rt.text)
+        assertEquals("https://x.com/baska/status/2", rt.url)
+    }
+
+    @Test
+    fun detectsLayoutChange() {
+        val noTimeline = JSONObject("""{"data":{"user_result_by_screen_name":{"result":{"__typename":"User","core":{"name":"A","screen_name":"A"}}}}}""")
+        val page = TwitterParser.parsePayloads(listOf(noTimeline), "A", ownOnly = false)
+        assertEquals(ScrapeErrors.LAYOUT_CHANGED, ScrapeErrors.check(page, "A")?.message)
+
+        val unknownTweets = JSONObject(
+            """{"data":{"user":{"result":{"timeline":{"instructions":[{"entries":[{"entryId":"tweet-1","content":{"yeniAlan":{}}}]}]}}}}}""",
+        )
+        val page2 = TwitterParser.parsePayloads(listOf(unknownTweets), "A", ownOnly = false)
+        assertEquals(ScrapeErrors.LAYOUT_CHANGED, ScrapeErrors.check(page2, "A")?.message)
+        assertTrue(!TwitterParser.hasEmbeddedData("<html>bambaşka bir sayfa</html>"))
     }
 
     @Test

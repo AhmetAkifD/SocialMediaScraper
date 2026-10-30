@@ -63,10 +63,12 @@ private val INTERVALS = listOf(15, 30, 60, 180, 360, 720, 1440)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState, onBack: () -> Unit, onLogin: () -> Unit) {
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val adding by vm.adding.collectAsStateWithLifecycle()
+    val xLoggedIn by vm.xLoggedIn.collectAsStateWithLifecycle()
+    var confirmLogout by remember { mutableStateOf(false) }
     var input by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<TrackedAccount?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -130,6 +132,27 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState, onBack: () ->
             }
 
             item { HorizontalDivider(Modifier.padding(top = 12.dp)) }
+            item { SectionTitle("X hesabı (isteğe bağlı)") }
+            item {
+                Text(
+                    if (xLoggedIn) "Giriş yapıldı. Akışta bir hesabı seçip yanıtlarını ve daha eski gönderilerini elle yükleyebilirsiniz."
+                    else "Giriş yaparsanız, akışta bir hesabı seçip yanıtlarını ve son 5'ten eski gönderilerini elle yükleyebilirsiniz. " +
+                        "Ayrı bir hesap kullanmanızı öneririz; otomatik kontrol girişi kullanmaz.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                if (xLoggedIn) {
+                    OutlinedButton(onClick = { confirmLogout = true }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Text("Çıkış yap")
+                    }
+                } else {
+                    Button(onClick = onLogin, modifier = Modifier.padding(horizontal = 16.dp)) { Text("X'e giriş yap") }
+                }
+            }
+
+            item { HorizontalDivider(Modifier.padding(top = 12.dp)) }
             item { SectionTitle("Otomatik kontrol") }
             item {
                 SwitchRow(
@@ -190,6 +213,15 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState, onBack: () ->
                 TextButton(onClick = { vm.removeAccount(account.handle); pendingDelete = null }) { Text("Kaldır") }
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Vazgeç") } },
+        )
+    }
+    if (confirmLogout) {
+        AlertDialog(
+            onDismissRequest = { confirmLogout = false },
+            title = { Text("X oturumu kapatılsın mı?") },
+            text = { Text("Kayıtlı gönderiler silinmez. Yanıtları ve eski gönderileri yüklemek için tekrar giriş yapmanız gerekir.") },
+            confirmButton = { TextButton(onClick = { vm.logout(); confirmLogout = false }) { Text("Çıkış yap") } },
+            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Vazgeç") } },
         )
     }
     if (confirmClear) {

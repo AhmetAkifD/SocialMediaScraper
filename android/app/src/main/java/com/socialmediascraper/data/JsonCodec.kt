@@ -51,6 +51,8 @@ internal object JsonCodec {
         put("createdAt", p.createdAt)
         put("url", p.url)
         put("isPinned", p.isPinned)
+        putOpt("replyTo", p.replyTo)
+        putOpt("retweetedBy", p.retweetedBy)
         put("replyCount", p.replyCount)
         put("retweetCount", p.retweetCount)
         put("likeCount", p.likeCount)
@@ -111,6 +113,8 @@ internal object JsonCodec {
             media = media,
             quoted = quoted,
             isPinned = o.optBoolean("isPinned"),
+            replyTo = o.optStringOrNull("replyTo"),
+            retweetedBy = o.optStringOrNull("retweetedBy"),
             replyCount = o.optLong("replyCount"),
             retweetCount = o.optLong("retweetCount"),
             likeCount = o.optLong("likeCount"),

@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.socialmediascraper.data.AddAccountResult
 import com.socialmediascraper.data.AppSettings
 import com.socialmediascraper.data.Repository
+import com.socialmediascraper.scraper.DeepResult
+import com.socialmediascraper.scraper.XSession
 import com.socialmediascraper.work.RefreshWorker
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +21,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val accounts = repo.accounts
     val posts = repo.posts
     val settings = repo.settings
+    val xLoggedIn = XSession.loggedIn
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing = _refreshing.asStateFlow()
@@ -80,6 +83,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _adding.value = false
             }
         }
+    }
+
+    fun refreshLoginState() {
+        XSession.refresh()
+    }
+
+    fun onLoginFinished(loggedIn: Boolean) {
+        if (loggedIn) _messages.trySend("X'e giriş yapıldı")
+    }
+
+    fun logout() {
+        XSession.logout()
+        _messages.trySend("X oturumu kapatıldı")
+    }
+
+    fun oldestPostTime(handle: String) = repo.oldestPostTime(handle)
+
+    fun onDeepFetchFinished(handle: String, result: DeepResult) {
+        val added = repo.saveDeepResult(handle, result)
+        _messages.trySend(
+            when (result) {
+                is DeepResult.Failure -> "@$handle: ${result.message}"
+                is DeepResult.Success -> buildString {
+                    append(if (added > 0) "@$handle: $added yeni gönderi eklendi" else "@$handle: yeni gönderi bulunamadı")
+                    result.note?.let { append(" ($it)") }
+                }
+            },
+        )
     }
 
     fun removeAccount(handle: String) {

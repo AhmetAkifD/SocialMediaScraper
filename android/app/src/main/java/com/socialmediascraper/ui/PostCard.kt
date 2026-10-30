@@ -69,13 +69,8 @@ fun PostCard(post: Post, modifier: Modifier = Modifier) {
             .clickable { openUrl(context, post.url) }
             .padding(start = 16.dp, end = 8.dp, top = 12.dp),
     ) {
-        if (post.isPinned) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 28.dp, bottom = 4.dp)) {
-                Icon(Icons.Outlined.PushPin, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.secondary)
-                Spacer(Modifier.width(4.dp))
-                Text("Sabitlenmiş", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-            }
-        }
+        if (post.isPinned) ContextLabel(Icons.Outlined.PushPin, "Sabitlenmiş")
+        post.retweetedBy?.let { ContextLabel(Icons.Outlined.Repeat, "@$it yeniden paylaştı") }
         Row {
             Avatar(post.authorAvatar, post.authorName)
             Spacer(Modifier.width(12.dp))
@@ -98,6 +93,13 @@ fun PostCard(post: Post, modifier: Modifier = Modifier) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                post.replyTo?.let {
+                    Text(
+                        "@$it kullanıcısına yanıt",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
                 if (post.text.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(linkify(post.text, MaterialTheme.colorScheme.primary), style = MaterialTheme.typography.bodyMedium)
@@ -114,6 +116,15 @@ fun PostCard(post: Post, modifier: Modifier = Modifier) {
             }
         }
         HorizontalDivider(Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    }
+}
+
+@Composable
+private fun ContextLabel(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 28.dp, bottom = 4.dp)) {
+        Icon(icon, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.secondary)
+        Spacer(Modifier.width(4.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
     }
 }
 

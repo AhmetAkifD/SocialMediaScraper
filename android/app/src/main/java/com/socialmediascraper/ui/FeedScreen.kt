@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -46,18 +47,29 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeedScreen(vm: MainViewModel, snackbar: SnackbarHostState, onOpenSettings: () -> Unit) {
+fun FeedScreen(
+    vm: MainViewModel,
+    snackbar: SnackbarHostState,
+    onOpenSettings: () -> Unit,
+    onLogin: () -> Unit,
+    onDeepFetch: (handle: String) -> Unit,
+) {
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
+    val xLoggedIn by vm.xLoggedIn.collectAsStateWithLifecycle()
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
+    var showReplies by rememberSaveable { mutableStateOf(true) }
 
     // Filtrelenen hesap silinirse filtreyi kaldır.
     if (filter != null && accounts.none { it.handle.equals(filter, ignoreCase = true) }) filter = null
 
-    val visible = remember(posts, filter) {
-        if (filter == null) posts else posts.filter { it.account.equals(filter, ignoreCase = true) }
+    val visible = remember(posts, filter, showReplies) {
+        posts.filter { p ->
+            (filter == null || p.account.equals(filter, ignoreCase = true)) && (showReplies || p.replyTo == null)
+        }
     }
+    val hasReplies = remember(posts) { posts.any { it.replyTo != null } }
     val failing = accounts.filter { it.lastError != null }
     val listState = rememberLazyListState()
 
@@ -90,12 +102,21 @@ fun FeedScreen(vm: MainViewModel, snackbar: SnackbarHostState, onOpenSettings: (
                 return@PullToRefreshBox
             }
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                if (accounts.size > 1) {
+                if (accounts.size > 1 || hasReplies) {
                     item(key = "filters") {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            if (hasReplies) {
+                                item {
+                                    FilterChip(
+                                        selected = showReplies,
+                                        onClick = { showReplies = !showReplies },
+                                        label = { Text("Yanıtlar") },
+                                    )
+                                }
+                            }
                             item {
                                 FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("Tümü") })
                             }
@@ -133,6 +154,45 @@ fun FeedScreen(vm: MainViewModel, snackbar: SnackbarHostState, onOpenSettings: (
                     }
                 }
                 items(visible, key = { it.id }) { post -> PostCard(post) }
+                item(key = "more") {
+                    LoadMoreFooter(
+                        handle = filter ?: accounts.singleOrNull()?.handle,
+                        loggedIn = xLoggedIn,
+                        onLogin = onLogin,
+                        onDeepFetch = onDeepFetch,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Liste sonunda: giriş yapılmışsa seçili hesabın yanıtlarını/eski gönderilerini elle yükleme. */
+@Composable
+private fun LoadMoreFooter(handle: String?, loggedIn: Boolean, onLogin: () -> Unit, onDeepFetch: (String) -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
+    ) {
+        when {
+            !loggedIn -> {
+                Text(
+                    "Yanıtlar ve son 5'ten eski gönderiler için X'e giriş yapın.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onLogin) { Text("X'e giriş yap") }
+            }
+            handle == null -> Text(
+                "Yanıtları ve eski gönderileri yüklemek için yukarıdan bir hesap seçin.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                textAlign = TextAlign.Center,
+            )
+            else -> OutlinedButton(onClick = { onDeepFetch(handle) }) {
+                Text("@$handle: yanıtları ve eski gönderileri yükle")
             }
         }
     }
